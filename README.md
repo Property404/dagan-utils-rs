@@ -9,14 +9,10 @@ Show specific lines in a file:
 ```
 $ seq 1 10 | line 5
 5
-$ seq 1 10 | line 2..4
-2
-3
-$ seq 1 10 | line 2..=4
-2
-3
-4
 $ seq 1 10 | line 5,8
 5
 8
+$ seq 1 10 | line 2..4
+2
+3
 ```
