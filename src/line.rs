@@ -122,7 +122,7 @@ fn write_lines(
                 }
                 // This seems to perform better than using `writeln!`
                 fout.write_all(line.as_bytes())?;
-                fout.write_all(&[b'\n'])?;
+                fout.write_all(b"\n")?;
             }
             // Don't bother reading the rest if we don't have to
             if let Some(end) = pattern.end {
