@@ -122,6 +122,7 @@ fn write_lines(
                 }
                 // This seems to perform better than using `writeln!`
                 fout.write_all(line.as_bytes())?;
+                // TODO: This seems to have a large perf hit. Figure out a way to avoid flushing
                 fout.write_all(b"\n")?;
             }
             // Don't bother reading the rest if we don't have to
