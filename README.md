@@ -16,3 +16,13 @@ $ seq 1 10 | line 2..4
 2
 3
 ```
+
+## sss - Standard Stream Split
+
+Pipe stdin to both stdout and stderr. Used to inspect piped commands
+
+```
+$ echo hello | sss | rev
+hello
+olleh
+```

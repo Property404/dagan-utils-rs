@@ -9,6 +9,10 @@ description = "Rust utilities for Dagans"
 name = "line"
 path = "src/line.rs"
 
+[[bin]]
+name = "sss"
+path = "src/sss.rs"
+
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.51", features = ["derive"] }
