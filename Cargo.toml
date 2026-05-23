@@ -13,6 +13,10 @@ path = "src/line.rs"
 name = "sss"
 path = "src/sss.rs"
 
+[[bin]]
+name = "crossbit"
+path = "src/crossbit.rs"
+
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.51", features = ["derive"] }
