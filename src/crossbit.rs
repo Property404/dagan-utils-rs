@@ -14,14 +14,15 @@ const PAGE_SIZE: usize = 4096;
 struct Args {
     /// The bitwise or bytewise operator to use
     operator: Operator,
-    /// A file to operate
+    /// The first file on which to operate
     file1: PathBuf,
-    /// An optional second file. Exclude to operate on stdin
+    /// The second file on which to operate. Elide to read from stdin instead
     file2: Option<PathBuf>,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum Operator {
+    // ~~~~ bitwise operators ~~~
     /// Bitwise AND
     And,
     /// Bitwise XOR
@@ -34,6 +35,8 @@ enum Operator {
     Nor,
     /// Bitwise XNOR
     Xnor,
+
+    // ~~~~ BYTEwise operators ~~~
     /// Bytewise wrapping add
     WrappingAdd,
     /// Bytewise saturating add
@@ -47,19 +50,19 @@ enum Operator {
 }
 
 impl Operator {
-    fn cross(self, bit1: u8, bit2: u8) -> u8 {
+    fn cross(self, byte1: u8, byte2: u8) -> u8 {
         match self {
-            Operator::And => bit1 & bit2,
-            Operator::Or => bit1 | bit2,
-            Operator::Xor => bit1 ^ bit2,
-            Operator::Nand => !(bit1 & bit2),
-            Operator::Nor => !(bit1 | bit2),
-            Operator::Xnor => !(bit1 ^ bit2),
-            Operator::WrappingAdd => bit1.wrapping_add(bit2),
-            Operator::SaturatingAdd => bit1.saturating_add(bit2),
-            Operator::AbsDiff => bit1.abs_diff(bit2),
-            Operator::Greater => bit1.max(bit2),
-            Operator::Lesser => bit1.min(bit2),
+            Operator::And => byte1 & byte2,
+            Operator::Or => byte1 | byte2,
+            Operator::Xor => byte1 ^ byte2,
+            Operator::Nand => !(byte1 & byte2),
+            Operator::Nor => !(byte1 | byte2),
+            Operator::Xnor => !(byte1 ^ byte2),
+            Operator::WrappingAdd => byte1.wrapping_add(byte2),
+            Operator::SaturatingAdd => byte1.saturating_add(byte2),
+            Operator::AbsDiff => byte1.abs_diff(byte2),
+            Operator::Greater => byte1.max(byte2),
+            Operator::Lesser => byte1.min(byte2),
         }
     }
 }
