@@ -12,8 +12,11 @@ const PAGE_SIZE: usize = 4096;
 /// Crossbit - combine files with boolean operator
 #[derive(Parser)]
 struct Args {
+    /// The boolean operator to use
     operator: Operator,
+    /// A file to operate
     file1: PathBuf,
+    /// An optional second file. Exclude to operate on stdin
     file2: Option<PathBuf>,
 }
 
@@ -22,6 +25,9 @@ enum Operator {
     And,
     Xor,
     Or,
+    Nand,
+    Nor,
+    Xnor,
 }
 
 impl Operator {
@@ -30,6 +36,9 @@ impl Operator {
             Operator::And => bit1 & bit2,
             Operator::Or => bit1 | bit2,
             Operator::Xor => bit1 ^ bit2,
+            Operator::Nand => !(bit1 & bit2),
+            Operator::Nor => !(bit1 | bit2),
+            Operator::Xnor => !(bit1 ^ bit2),
         }
     }
 }
@@ -88,16 +97,34 @@ mod tests {
                 vec![0b0010, 0b0001],
             ),
             (
+                Operator::Nand,
+                vec![0b0110, 0b0001],
+                vec![0b1010, 0b0101],
+                vec![0b1111_1101, 0b1111_1110],
+            ),
+            (
                 Operator::Or,
                 vec![0b0110, 0b0001],
                 vec![0b1010, 0b0101],
                 vec![0b1110, 0b0101],
             ),
             (
+                Operator::Nor,
+                vec![0b0110, 0b0001],
+                vec![0b1010, 0b0101],
+                vec![0b1111_0001, 0b1111_1010],
+            ),
+            (
                 Operator::Xor,
                 vec![0b0110, 0b0001],
                 vec![0b1010, 0b0101],
                 vec![0b1100, 0b0100],
+            ),
+            (
+                Operator::Xnor,
+                vec![0b0110, 0b0001],
+                vec![0b1010, 0b0101],
+                vec![0b1111_0011, 0b1111_1011],
             ),
         ];
         for tv in tvs {
