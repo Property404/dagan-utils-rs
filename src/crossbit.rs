@@ -12,7 +12,7 @@ const PAGE_SIZE: usize = 4096;
 /// Crossbit - combine files with boolean operator
 #[derive(Parser)]
 struct Args {
-    /// The boolean operator to use
+    /// The bitwise or bytewise operator to use
     operator: Operator,
     /// A file to operate
     file1: PathBuf,
@@ -22,16 +22,32 @@ struct Args {
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum Operator {
+    /// Bitwise AND
     And,
+    /// Bitwise XOR
     Xor,
+    /// Bitwise OR
     Or,
+    /// Bitwise NAND
     Nand,
+    /// Bitwise NOR
     Nor,
+    /// Bitwise XNOR
     Xnor,
+    /// Bytewise wrapping add
+    WrappingAdd,
+    /// Bytewise saturating add
+    SaturatingAdd,
+    /// Bytewise absolute difference - that is subtracting the lesser byte from the greater byte
+    AbsDiff,
+    /// Choose the greater byte
+    Greater,
+    /// Choose the lesser byte
+    Lesser,
 }
 
 impl Operator {
-    const fn cross(self, bit1: u8, bit2: u8) -> u8 {
+    fn cross(self, bit1: u8, bit2: u8) -> u8 {
         match self {
             Operator::And => bit1 & bit2,
             Operator::Or => bit1 | bit2,
@@ -39,6 +55,11 @@ impl Operator {
             Operator::Nand => !(bit1 & bit2),
             Operator::Nor => !(bit1 | bit2),
             Operator::Xnor => !(bit1 ^ bit2),
+            Operator::WrappingAdd => bit1.wrapping_add(bit2),
+            Operator::SaturatingAdd => bit1.saturating_add(bit2),
+            Operator::AbsDiff => bit1.abs_diff(bit2),
+            Operator::Greater => bit1.max(bit2),
+            Operator::Lesser => bit1.min(bit2),
         }
     }
 }
