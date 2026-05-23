@@ -3,7 +3,7 @@ use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use std::{
     fs::File,
-    io::{self, Read, Write},
+    io::{self, BufReader, Read, Write},
     path::PathBuf,
 };
 
@@ -24,24 +24,38 @@ enum Operator {
     Or,
 }
 
+impl Operator {
+    const fn cross(self, bit1: u8, bit2: u8) -> u8 {
+        match self {
+            Operator::And => bit1 & bit2,
+            Operator::Or => bit1 | bit2,
+            Operator::Xor => bit1 ^ bit2,
+        }
+    }
+}
+
 fn crossbit(
     operator: Operator,
     file1: impl Read,
     file2: impl Read,
     mut out: impl Write,
 ) -> Result<()> {
-    let file1 = file1.bytes();
-    let file2 = file2.bytes();
+    let file1 = BufReader::new(file1).bytes();
+    let file2 = BufReader::new(file2).bytes();
+
+    let mut index = 0;
+    let mut buffer = [0; PAGE_SIZE];
+
     for pair in file1.zip(file2) {
-        let in1 = pair.0?;
-        let in2 = pair.1?;
-        let byte = match operator {
-            Operator::And => in1 & in2,
-            Operator::Or => in1 | in2,
-            Operator::Xor => in1 ^ in2,
-        };
-        out.write_all(&[byte])?;
+        let byte = operator.cross(pair.0?, pair.1?);
+        buffer[index] = byte;
+        index += 1;
+        if index >= PAGE_SIZE {
+            out.write_all(&buffer)?;
+            index = 0;
+        }
     }
+    out.write_all(&buffer[0..index])?;
 
     Ok(())
 }
@@ -58,4 +72,72 @@ fn main() -> Result<()> {
         crossbit(args.operator, file1, io::stdin().lock(), stdout)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn operations() -> Result<()> {
+        let tvs = [
+            (
+                Operator::And,
+                vec![0b0110, 0b0001],
+                vec![0b1010, 0b0101],
+                vec![0b0010, 0b0001],
+            ),
+            (
+                Operator::Or,
+                vec![0b0110, 0b0001],
+                vec![0b1010, 0b0101],
+                vec![0b1110, 0b0101],
+            ),
+            (
+                Operator::Xor,
+                vec![0b0110, 0b0001],
+                vec![0b1010, 0b0101],
+                vec![0b1100, 0b0100],
+            ),
+        ];
+        for tv in tvs {
+            let mut out = Vec::with_capacity(tv.3.len());
+            crossbit(tv.0, tv.1.as_slice(), tv.2.as_slice(), &mut out)?;
+            assert_eq!(out, tv.3);
+        }
+        Ok(())
+    }
+
+    // Make sure we only produce the same number of bytes as the smaller of the two files
+    #[test]
+    fn size_diff() -> Result<()> {
+        let tvs = [
+            (
+                Operator::And,
+                vec![0b0110, 0b0001],
+                vec![0b1010, 0b0101],
+                vec![0b0010, 0b0001],
+            ),
+            (
+                Operator::And,
+                vec![0b0110],
+                vec![0b1010, 0b0101],
+                vec![0b0010],
+            ),
+            (
+                Operator::And,
+                vec![0b0110, 0b0001],
+                vec![0b1010],
+                vec![0b0010],
+            ),
+            (Operator::And, vec![0b0110, 0b0001], vec![], vec![]),
+            (Operator::And, vec![], vec![], vec![]),
+        ];
+        for tv in tvs {
+            let mut out = Vec::with_capacity(tv.3.len());
+            crossbit(tv.0, tv.1.as_slice(), tv.2.as_slice(), &mut out)?;
+            assert_eq!(out, tv.3);
+        }
+        Ok(())
+    }
 }
