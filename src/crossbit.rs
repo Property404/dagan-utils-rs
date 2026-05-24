@@ -14,10 +14,9 @@ const PAGE_SIZE: usize = 4096;
 struct Args {
     /// The bitwise or bytewise operator to use
     operator: Operator,
-    /// The first file on which to operate
-    file1: PathBuf,
-    /// The second file on which to operate. Elide to read from stdin instead
-    file2: Option<PathBuf>,
+    /// The files on which to operate. Use `-` to read from stdin
+    #[clap(num_args=2..)]
+    files: Vec<PathBuf>,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -69,18 +68,35 @@ impl Operator {
 
 fn crossbit(
     operator: Operator,
-    file1: impl Read,
-    file2: impl Read,
+    mut streams: impl Iterator<Item = Box<dyn Read>>,
     mut out: impl Write,
 ) -> Result<()> {
-    let file1 = BufReader::new(file1).bytes();
-    let file2 = BufReader::new(file2).bytes();
+    let primary = streams
+        .next()
+        .map(BufReader::new)
+        .map(Read::bytes)
+        .expect("Expected at least one stream");
+    let mut streams = streams
+        .map(BufReader::new)
+        .map(Read::bytes)
+        .collect::<Vec<_>>();
+    assert!(!streams.is_empty());
 
     let mut index = 0;
     let mut buffer = [0; PAGE_SIZE];
 
-    for pair in file1.zip(file2) {
-        let byte = operator.cross(pair.0?, pair.1?);
+    'outer: for byte in primary {
+        // Combine all the bytes
+        let mut byte: u8 = byte?;
+        for stream in &mut streams {
+            if let Some(secondary) = stream.next() {
+                byte = operator.cross(byte, secondary?);
+            } else {
+                break 'outer;
+            }
+        }
+
+        // Buffer or write
         buffer[index] = byte;
         index += 1;
         if index >= PAGE_SIZE {
@@ -95,15 +111,28 @@ fn crossbit(
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let file1 = File::open(args.file1)?;
     let stdout = io::stdout().lock();
 
-    if let Some(file2) = args.file2 {
-        let file2 = File::open(file2)?;
-        crossbit(args.operator, file1, file2, stdout)?;
-    } else {
-        crossbit(args.operator, file1, io::stdin().lock(), stdout)?;
-    }
+    // Map into files, and treat "-" as stdin
+    let files = args
+        .files
+        .into_iter()
+        .map(|path: PathBuf| {
+            if let Some(strpath) = path.to_str()
+                && strpath == "-"
+            {
+                let file: Box<dyn Read> = Box::new(io::stdin().lock());
+                Ok(file)
+            } else {
+                File::open(path).map(|file| {
+                    let file: Box<dyn Read> = Box::new(file);
+                    file
+                })
+            }
+        })
+        .collect::<Result<Vec<Box<dyn Read>>, _>>()?;
+
+    crossbit(args.operator, files.into_iter(), stdout)?;
     Ok(())
 }
 
@@ -111,49 +140,57 @@ fn main() -> Result<()> {
 mod tests {
     use super::*;
 
+    fn test_tv(tv: Operator, inputs: &[&'static [u8]], output: &mut Vec<u8>) -> Result<()> {
+        let inputs = inputs.iter().map(|input| {
+            let input: Box<dyn Read> = Box::new(*input);
+            input
+        });
+        crossbit(tv, inputs, output)
+    }
+
     #[test]
     fn operations() -> Result<()> {
         let tvs = [
             (
                 Operator::And,
-                vec![0b0110, 0b0001],
-                vec![0b1010, 0b0101],
-                vec![0b0010, 0b0001],
+                &[0b0110, 0b0001],
+                &[0b1010, 0b0101],
+                &[0b0010, 0b0001],
             ),
             (
                 Operator::Nand,
-                vec![0b0110, 0b0001],
-                vec![0b1010, 0b0101],
-                vec![0b1111_1101, 0b1111_1110],
+                &[0b0110, 0b0001],
+                &[0b1010, 0b0101],
+                &[0b1111_1101, 0b1111_1110],
             ),
             (
                 Operator::Or,
-                vec![0b0110, 0b0001],
-                vec![0b1010, 0b0101],
-                vec![0b1110, 0b0101],
+                &[0b0110, 0b0001],
+                &[0b1010, 0b0101],
+                &[0b1110, 0b0101],
             ),
             (
                 Operator::Nor,
-                vec![0b0110, 0b0001],
-                vec![0b1010, 0b0101],
-                vec![0b1111_0001, 0b1111_1010],
+                &[0b0110, 0b0001],
+                &[0b1010, 0b0101],
+                &[0b1111_0001, 0b1111_1010],
             ),
             (
                 Operator::Xor,
-                vec![0b0110, 0b0001],
-                vec![0b1010, 0b0101],
-                vec![0b1100, 0b0100],
+                &[0b0110, 0b0001],
+                &[0b1010, 0b0101],
+                &[0b1100, 0b0100],
             ),
             (
                 Operator::Xnor,
-                vec![0b0110, 0b0001],
-                vec![0b1010, 0b0101],
-                vec![0b1111_0011, 0b1111_1011],
+                &[0b0110, 0b0001],
+                &[0b1010, 0b0101],
+                &[0b1111_0011, 0b1111_1011],
             ),
         ];
         for tv in tvs {
             let mut out = Vec::with_capacity(tv.3.len());
-            crossbit(tv.0, tv.1.as_slice(), tv.2.as_slice(), &mut out)?;
+            test_tv(tv.0, &[tv.1.as_slice(), tv.2.as_slice()], &mut out)?;
             assert_eq!(out, tv.3);
         }
         Ok(())
@@ -162,31 +199,22 @@ mod tests {
     // Make sure we only produce the same number of bytes as the smaller of the two files
     #[test]
     fn size_diff() -> Result<()> {
-        let tvs = [
+        #[allow(clippy::type_complexity)]
+        let tvs: &[(Operator, &[u8], &[u8], &[u8])] = &[
             (
                 Operator::And,
-                vec![0b0110, 0b0001],
-                vec![0b1010, 0b0101],
-                vec![0b0010, 0b0001],
+                &[0b0110, 0b0001],
+                &[0b1010, 0b0101],
+                &[0b0010, 0b0001],
             ),
-            (
-                Operator::And,
-                vec![0b0110],
-                vec![0b1010, 0b0101],
-                vec![0b0010],
-            ),
-            (
-                Operator::And,
-                vec![0b0110, 0b0001],
-                vec![0b1010],
-                vec![0b0010],
-            ),
-            (Operator::And, vec![0b0110, 0b0001], vec![], vec![]),
-            (Operator::And, vec![], vec![], vec![]),
+            (Operator::And, &[0b0110], &[0b1010, 0b0101], &[0b0010]),
+            (Operator::And, &[0b0110, 0b0001], &[0b1010], &[0b0010]),
+            (Operator::And, &[0b0110, 0b0001], &[], &[]),
+            (Operator::And, &[], &[], &[]),
         ];
         for tv in tvs {
             let mut out = Vec::with_capacity(tv.3.len());
-            crossbit(tv.0, tv.1.as_slice(), tv.2.as_slice(), &mut out)?;
+            test_tv(tv.0, &[tv.1, tv.2], &mut out)?;
             assert_eq!(out, tv.3);
         }
         Ok(())
